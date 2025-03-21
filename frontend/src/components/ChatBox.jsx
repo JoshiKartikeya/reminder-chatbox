@@ -19,47 +19,56 @@ const ChatBox = () => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
-    // Add user message to chat
-    const userMessage = {
-      type: "user",
-      content: inputMessage,
-    };
-    setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      // First, process with NLP service
+      const userMessage = { text: inputMessage, type: "user" };
+      setMessages(prev => [...prev, userMessage]);
+      
       const nlpResponse = await axios.post("http://localhost:5001/extract", {
-        text: inputMessage,
+        text: inputMessage.trim()  // Use actual input instead of test message
       });
 
-      // Then, create reminder with processed data
-      await axios.post("http://localhost:5000/api/reminders", {
-        task: nlpResponse.data.task,
-        deadline: nlpResponse.data.deadline,
-        app: nlpResponse.data.app,
-      });
+      if (!nlpResponse.data) {
+        throw new Error('No response from NLP service');
+      }
 
-      // Add bot response to chat
-      const botMessage = {
-        type: "bot",
-        content: `✅ Reminder set: "${nlpResponse.data.task}" for ${new Date(
-          nlpResponse.data.deadline
-        ).toLocaleString()}`,
-      };
-      setMessages((prev) => [...prev, botMessage]);
+      console.log("NLP Response:", nlpResponse.data);
+
+      if (nlpResponse.data && nlpResponse.data.task) {
+        const reminderResponse = await axios.post(
+          "http://localhost:5000/api/reminders",
+          {
+            task: nlpResponse.data.task,
+            deadline: nlpResponse.data.deadline || new Date(),
+            app: nlpResponse.data.app || "default",
+          }
+        );
+
+        console.log("Reminder Response:", reminderResponse.data); // Add logging
+
+        setMessages((prev) => [
+          ...prev,
+          { text: `Reminder set: ${nlpResponse.data.task}`, type: "bot" },
+        ]);
+      }
     } catch (error) {
-      console.error("Request failed:", error);
-      const errorMessage = {
-        type: "bot",
-        content: "❌ Sorry, I couldn't process that request. Please try again.",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      console.error("Error details:", {
+        message: error.message,
+        response: error.response,
+        stack: error.stack
+      });
+      
+      setMessages(prev => [...prev, {
+        text: "Service connection error. Please ensure both backend and NLP services are running.",
+        type: "bot"
+      }]);
+    } finally {
+      setIsLoading(false);
     }
 
-    setIsLoading(false);
     setInputMessage("");
-  };
+};
 
   return (
     <div className="flex flex-col h-[600px]">
@@ -78,7 +87,8 @@ const ChatBox = () => {
                   : "bg-gray-200 text-gray-800"
               }`}
             >
-              {message.content}
+              {message.text}{" "}
+              {/* Changed from message.content to message.text */}
             </div>
           </div>
         ))}
